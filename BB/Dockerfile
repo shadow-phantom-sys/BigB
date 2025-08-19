@@ -1,12 +1,12 @@
 # Multi-stage Docker build
-FROM maven:3.9.4-openjdk-17 AS build
+FROM maven:3-openjdk-17 AS build
 
 # Set working directory
 WORKDIR /app
 
 # Copy pom.xml and download dependencies
 COPY pom.xml .
-RUN mvn dependency:go-offline -B
+RUN mvn dependency:go-offline -B -Dmaven.wagon.http.ssl.insecure=true -Dmaven.wagon.http.ssl.allowall=true
 
 # Copy source code and build application
 COPY src ./src
@@ -23,7 +23,7 @@ RUN addgroup --system spring && adduser --system spring --ingroup spring
 WORKDIR /app
 
 # Copy jar from build stage
-COPY --from=build /app/target/retail-application-1.0.0.jar app.jar
+COPY --from=build /app/target/*jar app.jar
 
 # Change ownership to spring user
 RUN chown -R spring:spring /app

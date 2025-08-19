@@ -103,6 +103,7 @@ public class StoreProductController {
     @DeleteMapping("/{storeId}/{productId}")
     public ResponseEntity<Void> removeProductFromStore(@PathVariable Long storeId, @PathVariable Long productId) {
         if (storeProductService.removeProductFromStore(storeId, productId)) {
+        	System.out.println("controller working");
             return ResponseEntity.noContent().build();
         }
         return ResponseEntity.notFound().build();

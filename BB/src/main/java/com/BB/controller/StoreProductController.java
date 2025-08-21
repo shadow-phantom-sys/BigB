@@ -3,6 +3,7 @@ package com.BB.controller;
 import java.math.BigDecimal;
 import java.util.List;
 
+import org.slf4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -92,6 +93,7 @@ public class StoreProductController {
     public ResponseEntity<List<StoreProductDTO>> getAvailableProducts() {
         List<StoreProductDTO> products = storeProductService.getAvailableProducts();
         return ResponseEntity.ok(products);
+       System.out.println("Logging");
     }
     
     @GetMapping("/category/{category}")

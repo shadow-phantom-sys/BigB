@@ -92,7 +92,7 @@ public class StoreProductController {
     @GetMapping("/available")
     public ResponseEntity<List<StoreProductDTO>> getAvailableProducts() {
         List<StoreProductDTO> products = storeProductService.getAvailableProducts();
-        System.out.println("Logging");
+        System.out.println("Logging2");
         return ResponseEntity.ok(products);
       
     }

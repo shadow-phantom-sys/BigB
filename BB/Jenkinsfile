@@ -1,261 +1,50 @@
 pipeline {
     agent any
-    
-    environment {
-        DOCKER_REGISTRY = 'your-registry.com'
-        IMAGE_NAME = 'retail-application'
-        KUBECONFIG = credentials('kubeconfig')
-        DOCKER_CREDENTIALS = credentials('docker-hub-credentials')
-        MYSQL_CREDENTIALS = credentials('mysql-credentials')
-    }
-    
+
     tools {
-        maven 'Maven-3.9'
-        jdk 'OpenJDK-17'
+        jdk 'jdk21'
+        maven 'maven3'
     }
-    
+
     stages {
         stage('Checkout') {
             steps {
-                checkout scm
-                sh 'git rev-parse --short HEAD > .git/commit-id'
-                script {
-                    env.GIT_COMMIT_ID = readFile('.git/commit-id').trim()
-                    env.BUILD_VERSION = "${env.BUILD_NUMBER}-${env.GIT_COMMIT_ID}"
-                }
+                git branch: 'master', url: 'https://github.com/shadow-phantom-sys/BigB.git'
             }
         }
-        
-        stage('Code Quality Analysis') {
-            parallel {
-                stage('Compile & Test') {
-                    steps {
-                        sh 'mvn clean compile test'
-                        publishTestResults(
-                            testResultsPattern: 'target/surefire-reports/*.xml',
-                            mergeResults: true,
-                            failedTestsFailBuild: true
-                        )
-                    }
-                }
-                
-                stage('Code Coverage') {
-                    steps {
-                        sh 'mvn jacoco:report'
-                        publishCoverage adapters: [
-                            jacocoAdapter('target/site/jacoco/jacoco.xml')
-                        ], sourceFileResolver: sourceFiles('STORE_LAST_BUILD')
-                    }
-                }
-                
-                stage('Static Code Analysis') {
-                    when {
-                        anyOf {
-                            branch 'main'
-                            branch 'develop'
-                            changeRequest()
-                        }
-                    }
-                    steps {
-                        withSonarQubeEnv('SonarQube') {
-                            sh '''
-                                mvn sonar:sonar \
-                                -Dsonar.projectKey=retail-application \
-                                -Dsonar.projectName='Retail Application' \
-                                -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
-                            '''
-                        }
-                    }
-                }
-            }
-        }
-        
-        stage('Quality Gate') {
-            when {
-                anyOf {
-                    branch 'main'
-                    branch 'develop'
-                }
-            }
+
+        stage('Build') {
             steps {
-                timeout(time: 5, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: true
-                }
+                sh 'mvn clean install'
             }
         }
-        
-        stage('Build Application') {
+
+        stage('Test') {
             steps {
-                sh 'mvn clean package -DskipTests'
+                sh 'mvn test'
+            }
+        }
+
+        stage('Package') {
+            steps {
+                sh 'mvn package -DskipTests'
                 archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
             }
         }
-        
-        stage('Build Docker Image') {
-            steps {
-                script {
-                    def imageTag = "${env.BUILD_VERSION}"
-                    def latestTag = "${DOCKER_REGISTRY}/${IMAGE_NAME}:latest"
-                    def versionTag = "${DOCKER_REGISTRY}/${IMAGE_NAME}:${imageTag}"
-                    
-                    sh "docker build -t ${versionTag} -t ${latestTag} ."
-                    
-                    // Security scan
-                    sh "docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image ${versionTag}"
-                }
-            }
-        }
-        
-        stage('Push Docker Image') {
-            when {
-                anyOf {
-                    branch 'main'
-                    branch 'develop'
-                }
-            }
-            steps {
-                script {
-                    docker.withRegistry("https://${DOCKER_REGISTRY}", env.DOCKER_CREDENTIALS) {
-                        def imageTag = "${env.BUILD_VERSION}"
-                        sh "docker push ${DOCKER_REGISTRY}/${IMAGE_NAME}:${imageTag}"
-                        sh "docker push ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest"
-                    }
-                }
-            }
-        }
-        
-        stage('Deploy to Development') {
-            when {
-                branch 'develop'
-            }
-            environment {
-                NAMESPACE = 'retail-dev'
-                ENVIRONMENT = 'development'
-            }
-            steps {
-                script {
-                    deployToKubernetes(env.NAMESPACE, env.BUILD_VERSION, env.ENVIRONMENT)
-                }
-            }
-        }
-        
-        stage('Deploy to Staging') {
-            when {
-                branch 'main'
-            }
-            environment {
-                NAMESPACE = 'retail-staging'
-                ENVIRONMENT = 'staging'
-            }
-            steps {
-                script {
-                    deployToKubernetes(env.NAMESPACE, env.BUILD_VERSION, env.ENVIRONMENT)
-                }
-            }
-        }
-        
-        stage('Integration Tests') {
-            when {
-                anyOf {
-                    branch 'main'
-                    branch 'develop'
-                }
-            }
-            steps {
-                script {
-                    sh '''
-                        # Wait for deployment to be ready
-                        kubectl wait --for=condition=available --timeout=300s deployment/retail-app -n ${NAMESPACE}
-                        
-                        # Run integration tests
-                        mvn test -Dtest=**/*IntegrationTest -Dspring.profiles.active=integration
-                    '''
-                }
-            }
-        }
-        
-        stage('Deploy to Production') {
-            when {
-                allOf {
-                    branch 'main'
-                    expression { return params.DEPLOY_TO_PRODUCTION == true }
-                }
-            }
-            environment {
-                NAMESPACE = 'retail-prod'
-                ENVIRONMENT = 'production'
-            }
-            steps {
-                input message: 'Deploy to Production?', ok: 'Deploy'
-                script {
-                    deployToKubernetes(env.NAMESPACE, env.BUILD_VERSION, env.ENVIRONMENT)
-                }
-            }
-        }
-    }
-    
-    post {
-        always {
-            cleanWs()
-        }
-        
-        success {
-            script {
-                if (env.BRANCH_NAME == 'main' || env.BRANCH_NAME == 'develop') {
-                    slackSend(
-                        color: 'good',
-                        message: ":white_check_mark: Pipeline succeeded for ${env.JOB_NAME} - ${env.BUILD_NUMBER} (${env.GIT_COMMIT_ID})"
-                    )
-                }
-            }
-        }
-        
-        failure {
-            slackSend(
-                color: 'danger',
-                message: ":x: Pipeline failed for ${env.JOB_NAME} - ${env.BUILD_NUMBER} (${env.GIT_COMMIT_ID})"
-            )
-        }
-        
-        unstable {
-            slackSend(
-                color: 'warning',
-                message: ":warning: Pipeline unstable for ${env.JOB_NAME} - ${env.BUILD_NUMBER} (${env.GIT_COMMIT_ID})"
-            )
-        }
-    }
-}
 
-def deployToKubernetes(namespace, version, environment) {
-    sh """
-        # Create namespace if it doesn't exist
-        kubectl create namespace ${namespace} --dry-run=client -o yaml | kubectl apply -f -
-        
-        # Apply database secret
-        kubectl apply -f k8s/mysql-secret.yaml -n ${namespace}
-        
-        # Apply ConfigMap
-        envsubst < k8s/configmap.yaml | kubectl apply -f - -n ${namespace}
-        
-        # Deploy MySQL (only for dev/staging)
-        if [ "${environment}" != "production" ]; then
-            kubectl apply -f k8s/mysql-deployment.yaml -n ${namespace}
-            kubectl apply -f k8s/mysql-service.yaml -n ${namespace}
-        fi
-        
-        # Update image tag in deployment
-        sed -i 's|IMAGE_TAG|${DOCKER_REGISTRY}/${IMAGE_NAME}:${version}|g' k8s/retail-app-deployment.yaml
-        
-        # Deploy application
-        kubectl apply -f k8s/retail-app-deployment.yaml -n ${namespace}
-        kubectl apply -f k8s/retail-app-service.yaml -n ${namespace}
-        kubectl apply -f k8s/retail-app-ingress.yaml -n ${namespace}
-        
-        # Wait for rollout to complete
-        kubectl rollout status deployment/retail-app -n ${namespace} --timeout=300s
-        
-        # Verify deployment
-        kubectl get pods -n ${namespace}
-        kubectl get services -n ${namespace}
-    """
+        stage('Deploy') {
+            steps {
+                echo 'Deployment step (can be Docker, Kubernetes, or server copy)'
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Build and Tests passed successfully!'
+        }
+        failure {
+            echo 'Build Failed. Check logs.'
+        }
+    }
 }

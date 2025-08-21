@@ -9,7 +9,7 @@ services:
       MYSQL_USER: retailuser
       MYSQL_PASSWORD: retailpass
     ports:
-      - "3308:3306"
+      - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     networks:
@@ -24,7 +24,7 @@ services:
     container_name: retail-application
     environment:
       # Tell Spring Boot how to reach the DB inside the network:
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/retaildb?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/retaildbs?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
       SPRING_DATASOURCE_USERNAME: retailuser
       SPRING_DATASOURCE_PASSWORD: retailpass
 

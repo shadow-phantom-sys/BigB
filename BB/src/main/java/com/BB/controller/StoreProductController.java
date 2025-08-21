@@ -92,8 +92,9 @@ public class StoreProductController {
     @GetMapping("/available")
     public ResponseEntity<List<StoreProductDTO>> getAvailableProducts() {
         List<StoreProductDTO> products = storeProductService.getAvailableProducts();
+        System.out.println("Logging");
         return ResponseEntity.ok(products);
-       System.out.println("Logging");
+      
     }
     
     @GetMapping("/category/{category}")

@@ -14,10 +14,11 @@ pipeline {
         }
 
         stage('Build') {
-            steps {
-                sh 'mvn clean install'
-            }
+    steps {
+        dir('BB') {   // 👈 cd into BB first
+            sh './mvnw clean install'
         }
+    }
 
         stage('Test') {
             steps {

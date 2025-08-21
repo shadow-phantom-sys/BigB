@@ -5,6 +5,11 @@ pipeline {
         jdk 'jdk21'
         maven 'maven3'
     }
+	
+	 environment {
+        DOCKERHUB_CREDENTIALS = credentials('c172a84a-b3d2-4860-9a4d-a1fcb689d3a9') // Jenkins credentials ID
+        DOCKER_IMAGE = "amar00369/spring-app"
+    }
 
     stages {
         stage('Checkout') {
@@ -38,7 +43,18 @@ pipeline {
                 echo 'Deployment step (can be Docker, Kubernetes, or server copy)'
             }
         }
+        stage('Docker Build & Push') {
+    steps {
+        script {
+            docker.withRegistry('https://index.docker.io/v1/', 'c172a84a-b3d2-4860-9a4d-a1fcb689d3a9') {
+                sh """
+                    docker build -t Amar00369/spring-app:latest .
+                    docker push Amar00369/spring-app:latest
+                """
+            }
+        }
     }
+}
 
     post {
         success {
